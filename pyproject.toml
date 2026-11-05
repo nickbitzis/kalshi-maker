@@ -1,0 +1,29 @@
+[project]
+name = "kalshi-maker"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+authors = [
+    { name = "Nick Bitzis", email = "58667322+nickbitzis@users.noreply.github.com" }
+]
+requires-python = ">=3.12"
+dependencies = [
+    "cryptography<46",
+    "httpx>=0.28.1",
+]
+
+[project.scripts]
+kalshi-scan = "kalshi_maker.scan:main"
+kalshi-paper = "kalshi_maker.paper:main"
+kalshi-report = "kalshi_maker.report:main"
+kalshi-live = "kalshi_maker.live:main"
+kalshi-bot = "kalshi_maker.bot:main"
+
+[build-system]
+requires = ["uv_build>=0.13.4,<0.14.0"]
+build-backend = "uv_build"
+
+[dependency-groups]
+dev = [
+    "pytest>=9.2.0",
+]
