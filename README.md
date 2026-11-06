@@ -1,57 +1,55 @@
-# Kalshi Maker
+# kalshi-maker
 
-Kalshi Maker is a market-making bot for Kalshi's Liquidity Incentive Program. Kalshi pays a reward pool in each market to traders who keep resting orders near the top of the book. This bot scans every rewarded market, estimates its share of each pool, paper-trades the strategy on live order books, and can run live with strict risk limits.
+A market-making bot for Kalshi's **Liquidity Incentive Program**: Kalshi pays a daily reward pool per market to traders who keep resting orders near the top of the book. The bot posts a YES bid and a NO bid at each side's reward "reference price", collects its share of the pool, and pairs off fills (a YES + NO pair settles at exactly $1). It does not predict outcomes.
 
-The strategy doesn't try to predict outcomes. It posts a yes bid and a no bid in each market at the price that earns full reward credit. If both sides fill, it holds a yes and no pair that settles at exactly $1.
+Built end to end: reward-model scanner, paper trader on live order books, live bot with real money, and an honest post-mortem.
 
-## Commands
-
+## Pipeline
 | Command | What it does |
 |---|---|
-| `uv run kalshi-scan --size 250` | Pulls every active reward program and order book, computes the expected share at a given size, and ranks markets by expected reward per day per dollar tied up. |
-| `uv run kalshi-paper --markets 20 --size 250 --hours 10` | Paper-trades on live books. It re-quotes at the reward price, accrues rewards per snapshot, simulates fills from the real trade tape with queue position respected, and pairs off yes and no inventory. |
-| `uv run kalshi-report [run]` | Summarizes a paper run: rewards, paired-fill P&L, open inventory, fees and net, by market. |
-| `uv run kalshi-live --check-auth` | Confirms an API key works by reading the account balance. |
-| `uv run kalshi-bot` | Live bot. Without `--place` it prints what it would do and sends nothing. With `--place` it sends real post-only orders. |
-| `uv run pytest` | 31 tests. |
+| `uv run kalshi-scan --size 250` | Pulls every active reward program and order book (~4,500 markets, ~$450K in pools), models our share of each pool at a given size, ranks by expected $/day per $ of capital. |
+| `uv run kalshi-paper --markets 20 --size 250 --hours 10` | Paper-trades on live books: re-quotes at the reference price, accrues rewards per snapshot, simulates fills from the public trade tape with queue position, pairs off YES/NO, marks inventory at mid. |
+| `uv run kalshi-report [run]` | P&L breakdown of a paper run: rewards, paired-fill P&L, open inventory, fees, per market. |
+| `uv run kalshi-bot` | Live bot. Dry run by default; `--place` sends real post-only orders. |
+| `uv run pytest` | 32 tests: reward scoring, fill simulation, pairing, price/inventory guards, request signing, and the live bot against a fake exchange. |
 
-Scanning and paper trading use only public data, so they need no account.
+Code in `src/kalshi_maker/`: `api.py` (public REST), `lip.py` (reward math, fees), `scan.py`, `paper.py`, `report.py`, `live.py` (signed client, RSA-PSS / Ed25519), `bot.py` (live loop).
 
-## Risk controls
+## Live bot safety
+- Post-only orders: it can never take liquidity or pay taker fees.
+- `--max-capital`: resting orders + held inventory never exceed the cap.
+- `--max-loss`: if account value falls this far, cancel everything and stop.
+- Kill switch file `data/STOP`; any exit (Ctrl-C, SIGTERM, crash) cancels all resting orders.
+- Waits out exchange closures (`/exchange/status`), reconciles its own resting orders each cycle so it never chases itself.
+- Never bids a side when pairing it with held inventory would cost ≥ $1; stops quoting outside 5–95¢.
 
-- `--max-capital` caps resting orders plus inventory.
-- `--max-loss` stops the bot and cancels every order.
-- Creating the file `data/STOP` acts as a kill switch, and every exit cancels all open orders.
-- It stops quoting a side priced outside 5 to 95 cents, and it never bids a side when pairing with held inventory would cost $1 or more.
-- It checks the exchange status and waits during scheduled closures.
-- It skips markets that close within 48 hours and markets whose expected reward per period is below the payout minimum.
+## Results
+**Paper (10 h runs, $3K):** ~$310/day modeled rewards; one run lost money on a market that went to near-certain YES, which led to the price and pair-cost guards above.
 
-## Setup for live trading
+**Live run 1 (24 h, $300, 25 contracts/side, 10 markets):**
+- Rewards paid: **$6.69**, about 1/4 of the paper model. Reasons found: rewards are paid only after each program period closes, a period paying under $1 pays nothing, and real competition was deeper than the static book.
+- Fill P&L: about **−$20**. Almost all of it came from news-driven, this-week markets (executive orders, Trump appearances): informed traders hit a resting bid once, then the price collapsed. A slow, two-way market (a Rotten Tomatoes score) made money on 13 round-trip fills.
+- Net: about −$11. Maker fees confirmed $0; resting orders do not lock cash.
+- 3,579 rejected orders all fell in Kalshi's weekly maintenance window, which led to the closure check.
 
-Create an API key in Kalshi's settings and save the `.pem` file outside the repo. Then:
+**Changes for run 2:** skip Politics/Elections categories and markets closing within 7 days, hold one market per event (strikes of one event move together), and skip markets expected to earn under $2 per reward period.
 
+**Live run 2 (72 h, $220 cap):** in progress.
+
+## Lessons
+- Model the payout rules, not just the scoring rule: payout timing and minimums cut real rewards by ~4x.
+- For a passive maker, market selection matters more than quote placement. Adverse selection lives in news-driven markets.
+- Paper fills from the trade tape understate adverse selection.
+
+## Setup
 ```bash
-export KALSHI_KEY_ID=<key id>
-export KALSHI_KEY_PATH=~/.kalshi/<file>.pem
+uv sync
+uv run kalshi-scan --size 100
+export KALSHI_KEY_ID=<key id> KALSHI_KEY_PATH=<path to private key>
 uv run kalshi-live --check-auth
-uv run kalshi-bot --max-capital 300 --size 25                          # dry run
-uv run kalshi-bot --max-capital 300 --size 25 --max-loss 50 --place    # live
+uv run kalshi-bot --max-capital 300 --size 25            # dry run
 ```
+Not financial advice. Kalshi can change or end the incentive program at any time.
 
-## Code
-
-| File | What it does |
-|---|---|
-| `api.py` | Public REST client |
-| `lip.py` | Reward scoring and fee math |
-| `scan.py` | Market scan and ranking |
-| `paper.py` | Paper trading engine and fill simulation |
-| `report.py` | Run reports |
-| `live.py` | Signed client for live orders |
-| `bot.py` | Live trading loop |
-
-The tests cover reward scoring, fill simulation, pairing, inventory and price guards, request signing, and the live bot against a fake exchange.
-
-## Limits
-
-The expected rewards assume today's competition stays the same, and fills are simulated from public trades. Real results depend on other market makers and on how Kalshi applies its scoring rules. This is a personal project, not investment advice.
+## License
+MIT, see `LICENSE`.

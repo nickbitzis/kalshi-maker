@@ -4,7 +4,7 @@
     uv run kalshi-live --check-auth                            # needs KALSHI_KEY_ID + KALSHI_KEY_PATH
 
 Real order placement (`--place`) is deliberately not wired into a loop yet: it waits for the
-paper results and an explicit go-ahead. Auth and endpoints follow docs.kalshi.com (checked 2026-11-02):
+paper results and a manual go-ahead. Auth and endpoints follow docs.kalshi.com (checked 2026-11-02):
 - headers KALSHI-ACCESS-KEY / -TIMESTAMP (ms) / -SIGNATURE
 - signature = base64(sign(timestamp + METHOD + path_without_query)), path includes /trade-api/v2
 - RSA keys: PSS, SHA-256, MGF1-SHA256, salt = 32; Ed25519 keys: plain signature

@@ -76,3 +76,9 @@ def test_risky_skips_events_already_dated_past():
 def test_period_days():
     from kalshi_maker.paper import period_days
     assert period_days({"start_date": "2026-11-05T05:00:00Z", "end_date": "2026-11-06T05:00:00Z"}) == 1
+
+
+def test_event_of_groups_strikes_of_one_event():
+    from kalshi_maker.paper import event_of
+    assert event_of("KXRT-CAT-55") == event_of("KXRT-CAT-50") == "KXRT-CAT"
+    assert event_of("KXEOWEEK-26NOV07-1") == "KXEOWEEK-26NOV07"

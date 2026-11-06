@@ -149,8 +149,10 @@ def process_trades(b: Book, trades: list[dict], log):
                 apply_fill(b, side, n - eat, q.price, log)
 
 
-# Election-result markets: after polls close, people who already know the count pick off resting bids.
-EXCLUDE_CATEGORIES = {"Elections"}
+# News-driven categories: informed traders pick off resting bids right before a move.
+# Live run 1: election, executive-order and Trump-appearance markets lost $21; slow two-way markets made money.
+EXCLUDE_CATEGORIES = {"Elections", "Politics"}
+MIN_HOURS_TO_CLOSE = 7 * 24  # this-week markets resolve on news; we hold one side when it lands
 MONTHS = {m: i for i, m in enumerate(["JAN", "FEB", "MAR", "APR", "MAY", "JUN", "JUL", "AUG", "SEP", "OCT", "NOV", "DEC"], 1)}
 DATE_CODE = re.compile(r"-(\d{2})(JAN|FEB|MAR|APR|MAY|JUN|JUL|AUG|SEP|OCT|NOV|DEC)(\d{2})")
 
@@ -171,6 +173,10 @@ def risky(ticker: str, today: date | None = None) -> bool:
     return d is not None and d <= (today or datetime.now(timezone.utc).date())
 
 
+def event_of(ticker: str) -> str:
+    return ticker.rsplit("-", 1)[0]
+
+
 MIN_PERIOD_PAYOUT = 2.0  # dollars; Kalshi's floor is $1 per program period, keep a margin
 
 
@@ -179,11 +185,11 @@ def period_days(prog: dict) -> float:
 
 
 def pick_markets(k: Kalshi, n: int, size: float, max_capital: float) -> list[Book]:
-    rows, _ = scan(size=size)
+    rows, _ = scan(size=size, min_hours=MIN_HOURS_TO_CLOSE)
     progs = {p["market_ticker"]: p for p in k.incentives()}
-    books, cap = [], 0.0
+    books, cap, events = [], 0.0, set()
     for r in rows:
-        if risky(r["ticker"]):
+        if risky(r["ticker"]) or event_of(r["ticker"]) in events:  # one market per event: strikes move together
             continue
         # skip sub-5c sides: tiny capital but the reward pools there are small and illiquid
         if min(r["yes_bid"], r["no_bid"]) < 0.05 or r["exp_per_day"] < 1:
@@ -203,6 +209,7 @@ def pick_markets(k: Kalshi, n: int, size: float, max_capital: float) -> list[Boo
             size=size,
         ))
         cap += r["capital"]
+        events.add(event_of(r["ticker"]))
         if len(books) >= n:
             break
     return books
