@@ -21,3 +21,22 @@ def test_order_body_is_post_only_resting():
     b = order_body("T", "ask", 0.45, 100)
     assert b["price"] == "0.4500" and b["count"] == "100.00"
     assert b["post_only"] and b["time_in_force"] == "good_till_canceled"
+
+
+def test_cancel_all_cancels_one_by_one_and_retries_network_errors():
+    import httpx
+
+    k = AuthKalshi.__new__(AuthKalshi)
+    orders = [{"order_id": "a", "ticker": "T"}, {"order_id": "b", "ticker": "T"}]
+    calls = {"n": 0}
+
+    def resting():
+        calls["n"] += 1
+        if calls["n"] == 1:
+            raise httpx.ConnectError("asleep")
+        return list(orders)
+
+    k.resting_orders = resting
+    k.cancel = lambda oid, t: orders[:] and orders.remove(next(o for o in orders if o["order_id"] == oid))
+    k.cancel_all(wait=0)
+    assert orders == []

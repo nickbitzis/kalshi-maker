@@ -11,7 +11,7 @@ Built end to end: reward-model scanner, paper trader on live order books, live b
 | `uv run kalshi-paper --markets 20 --size 250 --hours 10` | Paper-trades on live books: re-quotes at the reference price, accrues rewards per snapshot, simulates fills from the public trade tape with queue position, pairs off YES/NO, marks inventory at mid. |
 | `uv run kalshi-report [run]` | P&L breakdown of a paper run: rewards, paired-fill P&L, open inventory, fees, per market. |
 | `uv run kalshi-bot` | Live bot. Dry run by default; `--place` sends real post-only orders. |
-| `uv run pytest` | 32 tests: reward scoring, fill simulation, pairing, price/inventory guards, request signing, and the live bot against a fake exchange. |
+| `uv run pytest` | 33 tests: reward scoring, fill simulation, pairing, price/inventory guards, request signing, and the live bot against a fake exchange. |
 
 Code in `src/kalshi_maker/`: `api.py` (public REST), `lip.py` (reward math, fees), `scan.py`, `paper.py`, `report.py`, `live.py` (signed client, RSA-PSS / Ed25519), `bot.py` (live loop).
 
@@ -34,7 +34,13 @@ Code in `src/kalshi_maker/`: `api.py` (public REST), `lip.py` (reward math, fees
 
 **Changes for run 2:** skip Politics/Elections categories and markets closing within 7 days, hold one market per event (strikes of one event move together), and skip markets expected to earn under $2 per reward period.
 
-**Live run 2 (72 h, $220 cap):** in progress.
+**Live run 2 (72 h, $220 cap, 9 markets):**
+- Net about **−$2.69** including rewards; rewards came to roughly $2/day.
+- Two-way Rotten Tomatoes markets realized +$5 over 30+ round-trip fills: the strategy works where flow is two-sided.
+- One-sided fills on long-dated markets (a subscriber-count metric, an IPO date) lost ~$10 marked to market.
+- Found at shutdown: the laptop was asleep at time-up so cancel-all failed, and Kalshi's bulk cancel endpoint returns 200 without cancelling. `cancel_all` now cancels each order, confirms the book is empty, and retries on network errors.
+
+**Verdict:** at retail size the rewards (~$2–7/day) do not cover adverse selection on one-sided fills. Project closed after ~$18 total cost on a $300 test.
 
 ## Lessons
 - Model the payout rules, not just the scoring rule: payout timing and minimums cut real rewards by ~4x.

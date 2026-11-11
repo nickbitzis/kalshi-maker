@@ -4,7 +4,7 @@
     uv run kalshi-live --check-auth                            # needs KALSHI_KEY_ID + KALSHI_KEY_PATH
 
 Real order placement (`--place`) is deliberately not wired into a loop yet: it waits for the
-paper results and a manual go-ahead. Auth and endpoints follow docs.kalshi.com (checked 2026-11-02):
+paper results and an explicit go-ahead. Auth and endpoints follow docs.kalshi.com (checked 2026-11-02):
 - headers KALSHI-ACCESS-KEY / -TIMESTAMP (ms) / -SIGNATURE
 - signature = base64(sign(timestamp + METHOD + path_without_query)), path includes /trade-api/v2
 - RSA keys: PSS, SHA-256, MGF1-SHA256, salt = 32; Ed25519 keys: plain signature
@@ -94,8 +94,20 @@ class AuthKalshi:
     def market_positions(self) -> list[dict]:
         return self._paged("/portfolio/positions", "market_positions", {"limit": 1000})
 
-    def cancel_all(self) -> None:
-        self.request("DELETE", "/portfolio/events/orders")
+    def cancel_all(self, tries: int = 60, wait: float = 30) -> None:
+        """Cancel every resting order one by one and confirm none are left.
+        The bulk DELETE returns 200 without cancelling, so don't rely on it. Retries cover a
+        laptop waking from sleep with no network yet."""
+        for i in range(tries):
+            try:
+                for o in self.resting_orders():
+                    self.cancel(o["order_id"], o["ticker"])
+                if not self.resting_orders():
+                    return
+            except httpx.HTTPError as e:
+                print(f"cancel_all retry {i + 1}: {e!r}", flush=True)
+            time.sleep(wait)
+        raise RuntimeError("could not cancel all resting orders")
 
     def create_order(self, ticker: str, side: str, yes_price: float, count: float) -> dict:
         return self.request("POST", "/portfolio/events/orders", json=order_body(ticker, side, yes_price, count))
